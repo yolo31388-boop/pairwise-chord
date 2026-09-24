@@ -1,0 +1,37 @@
+实现 Chord DHT（分布式哈希表）的确定性单机模拟版，
+只用 Python 标准库。
+
+背景：chord.py 是骨架（ChordNode 类方法 raise NotImplementedError），
+tests/test_chord.py 是验收测试。
+
+模型（无真实网络/线程，单进程内所有节点共存）：
+  ChordNode._nodes 是全局注册表（node_id -> node），
+  put/get 路由到负责节点后直接操作该节点内部存储
+
+需求（feature，按 Chord 论文语义，m 位 id 环）：
+1. 结构：
+   - node_id 属于 0..2^m-1；join(existing=None) 加入环
+   - 空引导节点自成环（successor=predecessor=self）
+   - 每个节点维护 successor / predecessor / finger 表
+   - finger[k] = successor((node_id + 2^k) mod 2^m)，k=0..m-1
+2. 路由：find_successor(key) 沿 finger 找最近前置节点跳转，
+   返回环上第一个 id >= key 的节点（绕回）
+3. 数据：put(key, value) 路由到负责节点存入其 keys；
+   get(key) 同样路由读取（key 是 int）
+4. 维护：stabilize() 修正 successor/predecessor 关系；
+   fix_fingers() 重建 finger 表
+5. 离开：leave() 把自己负责的键迁移给 successor，
+   摘除环链接（successor.predecessor 与 predecessor.successor
+   互相指好），从注册表移除
+6. 加入后数据可达性：新节点入环后，原负责节点持有的键
+   仍能通过新环路由读到
+
+验收：
+- python -m pytest tests/test_chord.py -q 全绿
+- 覆盖：单节点环/finger 表/全 key 路由正确（对照暴力）/
+  任意节点发起路由/put-get 全量读回/离开迁移（含只剩单节点）/
+  环结构更新
+
+要求：
+- 只 import 标准库；禁止真线程/网络
+- 别改测试
